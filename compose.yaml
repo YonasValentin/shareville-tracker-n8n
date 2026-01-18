@@ -1,6 +1,9 @@
 # Shareville Discord Tracker - n8n Stack
 # Deploy via Dockge at http://192.168.0.25:5001
 # Stack name: n8n
+#
+# Based on official n8n Docker documentation:
+# https://docs.n8n.io/hosting/installation/docker/
 
 services:
   n8n:
@@ -9,14 +12,21 @@ services:
     ports:
       - "5678:5678"
     environment:
+      # Timezone settings (required for Schedule Trigger node)
+      - GENERIC_TIMEZONE=Europe/Copenhagen
+      - TZ=Europe/Copenhagen
+      # n8n configuration
       - N8N_HOST=192.168.0.25
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
-      - GENERIC_TIMEZONE=Europe/Copenhagen
-      - TZ=Europe/Copenhagen
-      # Increase memory for workflow execution
-      - NODE_OPTIONS=--max-old-space-size=256
+      # Security - enforce config file permissions (recommended)
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # Enable task runners (recommended by n8n docs)
+      - N8N_RUNNERS_ENABLED=true
+      # Production mode
+      - NODE_ENV=production
     volumes:
+      # Persist workflows, credentials, and execution history
       - n8n_data:/home/node/.n8n
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:5678/healthz"]
