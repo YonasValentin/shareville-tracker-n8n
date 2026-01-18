@@ -100,13 +100,87 @@
     },
     {
       "parameters": {
-        "jsCode": "const trade = $input.first().json;\n\n// Determine emoji based on trade type\nconst emoji = trade.tradeType === 'BUY' ? '🟢' : '🔴';\nconst actionWord = trade.tradeType === 'BUY' ? 'bought' : 'sold';\n\n// Format price\nconst price = trade.price ? trade.price.toFixed(2) : 'N/A';\nconst currency = trade.currency || 'DKK';\n\n// Get instrument info\nconst instrumentName = trade.instrument?.name || 'Unknown';\nconst legacyId = trade.instrument?.legacyInstrumentId || '';\nconst instrumentSlug = instrumentName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\n\n// Format P&L percentage (trader's gain/loss on position)\nconst pnl = trade.percentageChange;\nconst pnlEmoji = pnl >= 0 ? '📈' : '📉';\nconst pnlFormatted = pnl ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%` : 'N/A';\n\n// Format date\nconst tradeDate = new Date(trade.postedAt);\nconst dateStr = tradeDate.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });\n\n// Build Nordnet URL (works better than Shareville instrument URL)\nconst nordnetUrl = `https://www.nordnet.dk/markedet/aktiekurser/${legacyId}-${instrumentSlug}`;\n\n// Build rich message\nconst content = `${emoji} **${trade.traderName}** ${actionWord} **${instrumentName}**\\n\\n` +\n  `💰 **Price:** ${price} ${currency}\\n` +\n  `${pnlEmoji} **Position P&L:** ${pnlFormatted}\\n` +\n  `💼 **Strategy:** ${trade.traderFocus}\\n` +\n  `🕐 ${dateStr}\\n\\n` +\n  `🔗 [View on Nordnet](${nordnetUrl})`;\n\nreturn [{\n  json: {\n    content: content\n  }\n}];"
+        "method": "GET",
+        "url": "=https://query1.finance.yahoo.com/v1/finance/search?q={{ encodeURIComponent($json.instrument.name) }}&quotesCount=5&newsCount=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "yahoo-search",
+      "name": "Yahoo Finance Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const trade = $('Check If New').first().json;\nconst yahooData = $input.first().json;\n\n// Find best matching ticker (prefer Nordic exchanges)\nconst quotes = yahooData.quotes || [];\nconst nordicExchanges = ['STO', 'CPH', 'OSL', 'HEL'];\nconst usExchanges = ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ'];\n\nlet bestMatch = quotes.find(q => nordicExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes.find(q => usExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes[0];\n\n// Get news related to the stock\nconst news = yahooData.news || [];\nconst relatedNews = news.filter(n => {\n  const tickers = n.relatedTickers || [];\n  return bestMatch && tickers.includes(bestMatch.symbol);\n}).slice(0, 2);\n\n// If no related news, just take first news item\nconst newsToShow = relatedNews.length > 0 ? relatedNews : news.slice(0, 1);\n\nreturn [{\n  json: {\n    ...trade,\n    yahooSymbol: bestMatch?.symbol || null,\n    yahooExchange: bestMatch?.exchDisp || null,\n    sector: bestMatch?.sectorDisp || null,\n    industry: bestMatch?.industryDisp || null,\n    news: newsToShow\n  }\n}];"
+      },
+      "id": "process-yahoo-search",
+      "name": "Process Yahoo Search",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://query1.finance.yahoo.com/v8/finance/chart/{{ $json.yahooSymbol }}?interval=1d&range=5d",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "yahoo-quote",
+      "name": "Yahoo Finance Quote",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevData = $('Process Yahoo Search').first().json;\nconst quoteResponse = $input.first().json;\n\n// Extract quote data\nconst meta = quoteResponse?.chart?.result?.[0]?.meta || {};\n\nreturn [{\n  json: {\n    ...prevData,\n    currentPrice: meta.regularMarketPrice,\n    fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,\n    fiftyTwoWeekLow: meta.fiftyTwoWeekLow,\n    dayHigh: meta.regularMarketDayHigh,\n    dayLow: meta.regularMarketDayLow,\n    quoteCurrency: meta.currency\n  }\n}];"
+      },
+      "id": "process-yahoo-quote",
+      "name": "Process Yahoo Quote",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Determine emoji based on trade type\nconst emoji = data.tradeType === 'BUY' ? '🟢' : '🔴';\nconst actionWord = data.tradeType === 'BUY' ? 'bought' : 'sold';\n\n// Format trade price\nconst tradePrice = data.price ? data.price.toFixed(2) : 'N/A';\nconst currency = data.currency || 'DKK';\n\n// Get instrument info\nconst instrumentName = data.instrument?.name || 'Unknown';\nconst legacyId = data.instrument?.legacyInstrumentId || '';\nconst instrumentSlug = instrumentName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\n\n// Format P&L percentage (trader's gain/loss on position)\nconst pnl = data.percentageChange;\nconst pnlEmoji = pnl >= 0 ? '📈' : '📉';\nconst pnlFormatted = pnl !== undefined ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%` : 'N/A';\n\n// Format date\nconst tradeDate = new Date(data.postedAt);\nconst dateStr = tradeDate.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });\n\n// Build Nordnet URL\nconst nordnetUrl = `https://www.nordnet.dk/markedet/aktiekurser/${legacyId}-${instrumentSlug}`;\n\n// Yahoo Finance data\nconst currentPrice = data.currentPrice ? data.currentPrice.toFixed(2) : null;\nconst high52 = data.fiftyTwoWeekHigh ? data.fiftyTwoWeekHigh.toFixed(2) : null;\nconst low52 = data.fiftyTwoWeekLow ? data.fiftyTwoWeekLow.toFixed(2) : null;\nconst sector = data.sector || null;\nconst industry = data.industry || null;\nconst yahooSymbol = data.yahooSymbol || null;\n\n// Calculate position in 52-week range\nlet rangePosition = null;\nif (currentPrice && high52 && low52) {\n  const range = parseFloat(high52) - parseFloat(low52);\n  if (range > 0) {\n    rangePosition = ((parseFloat(currentPrice) - parseFloat(low52)) / range * 100).toFixed(0);\n  }\n}\n\n// Build rich message\nlet content = `${emoji} **${data.traderName}** ${actionWord} **${instrumentName}**\\n\\n`;\n\n// Trade details section\ncontent += `💰 **Trade Price:** ${tradePrice} ${currency}\\n`;\ncontent += `${pnlEmoji} **Position P&L:** ${pnlFormatted}\\n`;\ncontent += `💼 **Strategy:** ${data.traderFocus}\\n`;\ncontent += `🕐 ${dateStr}\\n\\n`;\n\n// Market data section (if available)\nif (currentPrice || sector) {\n  content += `━━━━━━━━━━━━━━━━━━━━\\n`;\n  content += `📊 **Market Data**`;\n  if (yahooSymbol) content += ` *(${yahooSymbol})*`;\n  content += `\\n`;\n  \n  if (currentPrice) {\n    content += `💵 **Current:** ${currentPrice} ${data.quoteCurrency || currency}\\n`;\n  }\n  if (high52 && low52) {\n    content += `📉 **52W Range:** ${low52} - ${high52}\\n`;\n    if (rangePosition) {\n      const rangeBar = rangePosition <= 25 ? '🔴 Near low' : rangePosition >= 75 ? '🟢 Near high' : '🟡 Mid-range';\n      content += `📍 **Position:** ${rangePosition}% ${rangeBar}\\n`;\n    }\n  }\n  if (sector) {\n    content += `🏢 **Sector:** ${sector}\\n`;\n  }\n  if (industry) {\n    content += `🔧 **Industry:** ${industry}\\n`;\n  }\n  content += `\\n`;\n}\n\n// News section\nconst news = data.news || [];\nif (news.length > 0) {\n  content += `━━━━━━━━━━━━━━━━━━━━\\n`;\n  content += `📰 **Related News**\\n`;\n  news.forEach(n => {\n    const title = n.title?.substring(0, 60) + (n.title?.length > 60 ? '...' : '');\n    content += `• [${title}](${n.link})\\n`;\n  });\n  content += `\\n`;\n}\n\n// Links\ncontent += `🔗 [Nordnet](${nordnetUrl})`;\nif (yahooSymbol) {\n  content += ` | [Yahoo Finance](https://finance.yahoo.com/quote/${yahooSymbol})`;\n}\n\nreturn [{\n  json: {\n    content: content\n  }\n}];"
       },
       "id": "format-message",
       "name": "Format Discord Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 300]
+      "position": [2300, 300]
     },
     {
       "parameters": {
@@ -121,7 +195,7 @@
       "name": "Send to Discord",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1700, 300]
+      "position": [2500, 300]
     }
   ],
   "connections": {
@@ -195,6 +269,50 @@
       "main": [
         [
           {
+            "node": "Yahoo Finance Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yahoo Finance Search": {
+      "main": [
+        [
+          {
+            "node": "Process Yahoo Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Yahoo Search": {
+      "main": [
+        [
+          {
+            "node": "Yahoo Finance Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yahoo Finance Quote": {
+      "main": [
+        [
+          {
+            "node": "Process Yahoo Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Yahoo Quote": {
+      "main": [
+        [
+          {
             "node": "Format Discord Message",
             "type": "main",
             "index": 0
@@ -222,6 +340,6 @@
     "instanceId": "shareville-tracker"
   },
   "pinData": {},
-  "versionId": "1",
+  "versionId": "2",
   "triggerCount": 0
 }
