@@ -97,21 +97,20 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://mfn.se/a/{{ $json.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '') }}",
+        "url": "=https://mfn.se/a/{{ $json.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '') }}.json",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "User-Agent",
-              "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+              "value": "Mozilla/5.0"
             }
           ]
         },
         "options": {
           "response": {
             "response": {
-              "neverError": true,
-              "responseFormat": "text"
+              "neverError": true
             }
           }
         }
@@ -124,7 +123,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const stock = $('Is SEK?').item.json;\nconst html = $input.first().json.data || '';\n\n// Parse MFN.se press releases - look for compressed-date, compressed-time, and title-link\nconst articles = [];\n\n// Pattern: compressed-date followed by compressed-time followed by title-link\nconst pattern = /compressed-date\">([^<]+)<\\/span>\\s*<span class=\"compressed-time\">([^<]+)<[\\s\\S]*?<a[^>]*class=\"[^\"]*title-link[^\"]*\"[^>]*href=\"([^\"]+)\"[^>]*title=\"([^\"]+)\"/gi;\n\nlet match;\nwhile ((match = pattern.exec(html)) !== null && articles.length < 5) {\n  const date = match[1].trim();\n  const time = match[2].trim();\n  const path = match[3];\n  const title = match[4].trim();\n  \n  if (!title || title.length < 10) continue;\n  \n  // Skip Swedish duplicates (only keep English)\n  if (path.includes('-fran-') || path.includes('-till-') || path.includes('-och-') || path.includes('-for-') || path.includes('-av-')) continue;\n  \n  articles.push({\n    link: 'https://mfn.se' + path,\n    title: title,\n    date: date + ' ' + time,\n    publisher: 'MFN.se',\n    uuid: 'mfn-' + path.replace(/[^a-z0-9]/gi, '-')\n  });\n}\n\nif (articles.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: null,\n    yahooExchange: null,\n    news: articles\n  }\n}];"
+        "jsCode": "const stock = $('Is SEK?').item.json;\nconst data = $input.first().json;\n\n// MFN.se JSON API response\nconst items = data.items || [];\n\n// Filter to English articles only and take first 5\nconst articles = items\n  .filter(item => item.properties && item.properties.lang === 'en')\n  .slice(0, 5)\n  .map(item => ({\n    link: item.url,\n    title: item.content.title,\n    date: item.content.publish_date,\n    publisher: 'MFN.se',\n    uuid: item.news_id\n  }));\n\nif (articles.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: null,\n    yahooExchange: null,\n    news: articles\n  }\n}];"
       },
       "id": "parse-mfn",
       "name": "Parse MFN News",
