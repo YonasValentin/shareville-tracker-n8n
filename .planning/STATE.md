@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- **Phase**: 1 - MFN.se Scraper
-- **Status**: Ready to plan
-- **Next Action**: `/gsd:plan-phase 1`
+- **Phase**: Complete
+- **Status**: All requirements implemented
+- **Next Action**: Deploy to Raspberry Pi and test
 
 ## Recent Progress
 
@@ -13,6 +13,13 @@
 - Mapped existing codebase (7 documents)
 - Defined requirements (11 total)
 - Created roadmap (2 phases)
+- Implemented MFN.se integration:
+  - Added Route by Currency switch node
+  - Added MFN.se fetch and parse nodes
+  - Added Merge node for combining news sources
+  - Updated Discord embed for Swedish stocks (🇸🇪 emoji)
+- Updated README with new architecture
+- All 11 requirements complete
 
 ## Context
 
@@ -37,8 +44,25 @@ None - approach is clear.
 ## Session Continuity
 
 Last session: 2026-01-18
-- Completed: Codebase mapping, project initialization
-- Next: Plan Phase 1 (MFN.se Scraper)
+- Completed: Full implementation of MFN.se integration
+- Next: Deploy to Raspberry Pi and verify workflow
+
+## Deployment
+
+To deploy the updated workflow:
+
+1. Pull changes on Pi:
+   ```bash
+   cd ~/shareville-tracker-n8n && git pull
+   ```
+
+2. Import to n8n:
+   - Open n8n at http://192.168.0.25:5678
+   - Delete old Portfolio News Alert workflow
+   - Import `portfolio-news-workflow.json`
+   - Activate the workflow
+
+3. Test manually with the play button
 
 ---
-*Last updated: 2026-01-18*
+*Last updated: 2026-01-18 - Implementation complete*
