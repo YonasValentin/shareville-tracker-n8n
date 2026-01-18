@@ -25,6 +25,8 @@ services:
       - N8N_RUNNERS_ENABLED=true
       # Production mode
       - NODE_ENV=production
+      # Allow HTTP access on local network
+      - N8N_SECURE_COOKIE=false
     volumes:
       # Persist workflows, credentials, and execution history
       - n8n_data:/home/node/.n8n
