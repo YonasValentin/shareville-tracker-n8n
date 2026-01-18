@@ -80,7 +80,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Get trader info from earlier in the chain\nconst traderInfo = $('Split Traders').first().json;\nconst slug = traderInfo.slug;\nconst traderName = traderInfo.name;\nconst traderFocus = traderInfo.focus;\n\n// Get feed data\nconst feed = $input.first().json.feed || [];\n\n// Filter for TRADE events only\nconst trades = feed.filter(event => event.type === 'TRADE');\n\n// Map trades with trader info\nreturn trades.map(trade => ({\n  json: {\n    ...trade,\n    traderSlug: slug,\n    traderName: traderName,\n    traderFocus: traderFocus\n  }\n}));"
+        "jsCode": "const traderInfo = $('Split Traders').first().json;\nconst slug = traderInfo.slug;\nconst traderName = traderInfo.name;\nconst traderFocus = traderInfo.focus;\n\nconst feed = $input.first().json.feed || [];\nconst trades = feed.filter(event => event.type === 'TRADE');\n\nreturn trades.map(trade => ({\n  json: {\n    ...trade,\n    traderSlug: slug,\n    traderName: traderName,\n    traderFocus: traderFocus\n  }\n}));"
       },
       "id": "filter-trades",
       "name": "Filter Trades",
@@ -90,7 +90,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Get workflow static data for state persistence\nconst staticData = $getWorkflowStaticData('global');\nconst lastSeen = staticData.lastSeen || {};\n\nconst trade = $input.first().json;\nconst slug = trade.traderSlug;\nconst tradeTime = new Date(trade.postedAt).getTime();\nconst tradeId = `${slug}-${trade.id || tradeTime}`;\n\n// Check if we've already seen this trade\nif (lastSeen[tradeId]) {\n  return []; // Already alerted, skip\n}\n\n// Mark as seen\nlastSeen[tradeId] = Date.now();\nstaticData.lastSeen = lastSeen;\n\n// Clean up old entries (older than 7 days)\nconst oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);\nfor (const key of Object.keys(lastSeen)) {\n  if (lastSeen[key] < oneWeekAgo) {\n    delete lastSeen[key];\n  }\n}\n\nreturn [{ json: trade }];"
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst lastSeen = staticData.lastSeen || {};\n\nconst trade = $input.first().json;\nconst slug = trade.traderSlug;\nconst tradeTime = new Date(trade.postedAt).getTime();\nconst tradeId = `${slug}-${trade.id || tradeTime}`;\n\nif (lastSeen[tradeId]) {\n  return [];\n}\n\nlastSeen[tradeId] = Date.now();\nstaticData.lastSeen = lastSeen;\n\nconst oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);\nfor (const key of Object.keys(lastSeen)) {\n  if (lastSeen[key] < oneWeekAgo) {\n    delete lastSeen[key];\n  }\n}\n\nreturn [{ json: trade }];"
       },
       "id": "check-state",
       "name": "Check If New",
@@ -101,7 +101,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://query1.finance.yahoo.com/v1/finance/search?q={{ encodeURIComponent($json.instrument.name) }}&quotesCount=5&newsCount=5",
+        "url": "=https://query1.finance.yahoo.com/v1/finance/search?q={{ encodeURIComponent($json.instrument.name) }}&quotesCount=5&newsCount=3",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -127,7 +127,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const trade = $('Check If New').first().json;\nconst yahooData = $input.first().json;\n\n// Find best matching ticker (prefer Nordic exchanges)\nconst quotes = yahooData.quotes || [];\nconst nordicExchanges = ['STO', 'CPH', 'OSL', 'HEL'];\nconst usExchanges = ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ'];\n\nlet bestMatch = quotes.find(q => nordicExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes.find(q => usExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes[0];\n\n// Get news related to the stock\nconst news = yahooData.news || [];\nconst relatedNews = news.filter(n => {\n  const tickers = n.relatedTickers || [];\n  return bestMatch && tickers.includes(bestMatch.symbol);\n}).slice(0, 2);\n\n// If no related news, just take first news item\nconst newsToShow = relatedNews.length > 0 ? relatedNews : news.slice(0, 1);\n\nreturn [{\n  json: {\n    ...trade,\n    yahooSymbol: bestMatch?.symbol || null,\n    yahooExchange: bestMatch?.exchDisp || null,\n    sector: bestMatch?.sectorDisp || null,\n    industry: bestMatch?.industryDisp || null,\n    news: newsToShow\n  }\n}];"
+        "jsCode": "const trade = $('Check If New').first().json;\nconst yahooData = $input.first().json;\n\nconst quotes = yahooData.quotes || [];\nconst nordicExchanges = ['STO', 'CPH', 'OSL', 'HEL'];\nconst usExchanges = ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ'];\n\nlet bestMatch = quotes.find(q => nordicExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes.find(q => usExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes[0];\n\nconst news = yahooData.news || [];\n\nreturn [{\n  json: {\n    ...trade,\n    yahooSymbol: bestMatch?.symbol || null,\n    yahooExchange: bestMatch?.exchDisp || null,\n    sector: bestMatch?.sectorDisp || null,\n    industry: bestMatch?.industryDisp || null,\n    news: news.slice(0, 2)\n  }\n}];"
       },
       "id": "process-yahoo-search",
       "name": "Process Yahoo Search",
@@ -138,7 +138,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://query1.finance.yahoo.com/v8/finance/chart/{{ $json.yahooSymbol }}?interval=1d&range=5d",
+        "url": "https://fc.yahoo.com",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -151,36 +151,110 @@
         "options": {
           "response": {
             "response": {
-              "neverError": true
+              "neverError": true,
+              "fullResponse": true
             }
           }
         }
       },
-      "id": "yahoo-quote",
-      "name": "Yahoo Finance Quote",
+      "id": "yahoo-cookie",
+      "name": "Get Yahoo Cookie",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1900, 300]
     },
     {
       "parameters": {
-        "jsCode": "const prevData = $('Process Yahoo Search').first().json;\nconst quoteResponse = $input.first().json;\n\n// Extract quote data\nconst meta = quoteResponse?.chart?.result?.[0]?.meta || {};\n\nreturn [{\n  json: {\n    ...prevData,\n    currentPrice: meta.regularMarketPrice,\n    fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,\n    fiftyTwoWeekLow: meta.fiftyTwoWeekLow,\n    dayHigh: meta.regularMarketDayHigh,\n    dayLow: meta.regularMarketDayLow,\n    quoteCurrency: meta.currency\n  }\n}];"
+        "method": "GET",
+        "url": "https://query2.finance.yahoo.com/v1/test/getcrumb",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $input.first().json.headers['set-cookie']?.[0]?.split(';')[0] || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
       },
-      "id": "process-yahoo-quote",
-      "name": "Process Yahoo Quote",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "yahoo-crumb",
+      "name": "Get Yahoo Crumb",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [2100, 300]
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\n\n// Colors for embed\nconst color = data.tradeType === 'BUY' ? 0x22c55e : 0xef4444; // green or red\nconst emoji = data.tradeType === 'BUY' ? '🟢' : '🔴';\nconst actionWord = data.tradeType === 'BUY' ? 'BOUGHT' : 'SOLD';\n\n// Format trade price\nconst tradePrice = data.price ? data.price.toFixed(2) : 'N/A';\nconst currency = data.currency || 'DKK';\n\n// Get instrument info\nconst instrumentName = data.instrument?.name || 'Unknown';\nconst legacyId = data.instrument?.legacyInstrumentId || '';\nconst instrumentSlug = instrumentName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\nconst logoUrl = data.instrument?.logoUrl || null;\n\n// Format P&L\nconst pnl = data.percentageChange;\nconst pnlFormatted = pnl !== undefined ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%` : 'N/A';\n\n// Format date\nconst tradeDate = new Date(data.postedAt);\nconst dateStr = tradeDate.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });\n\n// URLs\nconst nordnetUrl = `https://www.nordnet.dk/markedet/aktiekurser/${legacyId}-${instrumentSlug}`;\nconst yahooSymbol = data.yahooSymbol || null;\nconst yahooUrl = yahooSymbol ? `https://finance.yahoo.com/quote/${yahooSymbol}` : null;\n\n// Yahoo Finance data\nconst currentPrice = data.currentPrice ? data.currentPrice.toFixed(2) : null;\nconst high52 = data.fiftyTwoWeekHigh ? data.fiftyTwoWeekHigh.toFixed(2) : null;\nconst low52 = data.fiftyTwoWeekLow ? data.fiftyTwoWeekLow.toFixed(2) : null;\n\n// Calculate 52-week position\nlet rangeInfo = null;\nif (currentPrice && high52 && low52) {\n  const range = parseFloat(high52) - parseFloat(low52);\n  if (range > 0) {\n    const pos = ((parseFloat(currentPrice) - parseFloat(low52)) / range * 100).toFixed(0);\n    const indicator = pos <= 25 ? '🔴' : pos >= 75 ? '🟢' : '🟡';\n    rangeInfo = `${indicator} ${pos}% of 52W range`;\n  }\n}\n\n// Build fields array\nconst fields = [];\n\n// Row 1: Trade info\nfields.push({ name: '💰 Trade Price', value: `${tradePrice} ${currency}`, inline: true });\nfields.push({ name: '📊 Position P&L', value: pnlFormatted, inline: true });\nfields.push({ name: '💼 Strategy', value: data.traderFocus, inline: true });\n\n// Row 2: Market data (if available)\nif (currentPrice) {\n  fields.push({ name: '💵 Current Price', value: `${currentPrice} ${data.quoteCurrency || currency}`, inline: true });\n}\nif (high52 && low52) {\n  fields.push({ name: '📉 52W Range', value: `${low52} - ${high52}`, inline: true });\n}\nif (rangeInfo) {\n  fields.push({ name: '📍 Position', value: rangeInfo, inline: true });\n}\n\n// Row 3: Sector info\nif (data.sector) {\n  fields.push({ name: '🏢 Sector', value: data.sector, inline: true });\n}\nif (data.industry) {\n  fields.push({ name: '🔧 Industry', value: data.industry, inline: true });\n}\nif (yahooSymbol) {\n  fields.push({ name: '📈 Ticker', value: yahooSymbol, inline: true });\n}\n\n// News section\nconst news = data.news || [];\nif (news.length > 0) {\n  const newsText = news.map(n => {\n    const title = n.title?.substring(0, 50) + (n.title?.length > 50 ? '...' : '');\n    return `• [${title}](${n.link})`;\n  }).join('\\n');\n  fields.push({ name: '📰 Related News', value: newsText, inline: false });\n}\n\n// Build description with links\nlet description = `**${data.traderName}** ${actionWord.toLowerCase()} this stock`;\n\n// Links line\nconst links = [`[Nordnet](${nordnetUrl})`];\nif (yahooUrl) links.push(`[Yahoo Finance](${yahooUrl})`);\ndescription += `\\n\\n🔗 ${links.join(' • ')}`;\n\n// Build embed\nconst embed = {\n  title: `${emoji} ${actionWord}: ${instrumentName}`,\n  description: description,\n  color: color,\n  fields: fields,\n  footer: { text: `Trade executed: ${dateStr}` },\n  timestamp: data.postedAt\n};\n\n// Add thumbnail if logo available\nif (logoUrl) {\n  embed.thumbnail = { url: logoUrl };\n}\n\nreturn [{ json: { embed } }];"
+        "jsCode": "const prevData = $('Process Yahoo Search').first().json;\nconst cookieResponse = $('Get Yahoo Cookie').first().json;\nconst crumb = $input.first().json.data || '';\nconst cookie = cookieResponse.headers?.['set-cookie']?.[0]?.split(';')[0] || '';\n\nreturn [{\n  json: {\n    ...prevData,\n    yahooCrumb: crumb,\n    yahooCookie: cookie\n  }\n}];"
+      },
+      "id": "prepare-financial-request",
+      "name": "Prepare Financial Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2300, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://query2.finance.yahoo.com/v10/finance/quoteSummary/{{ $json.yahooSymbol }}?modules=summaryDetail,financialData,defaultKeyStatistics&crumb={{ $json.yahooCrumb }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $json.yahooCookie }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "yahoo-financials",
+      "name": "Get Financial Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevData = $('Prepare Financial Request').first().json;\nconst finResponse = $input.first().json;\n\nconst result = finResponse?.quoteSummary?.result?.[0] || {};\nconst summary = result.summaryDetail || {};\nconst financial = result.financialData || {};\nconst keyStats = result.defaultKeyStatistics || {};\n\nreturn [{\n  json: {\n    ...prevData,\n    // Valuation\n    trailingPE: summary.trailingPE?.fmt || null,\n    forwardPE: summary.forwardPE?.fmt || null,\n    priceToBook: summary.priceToBook?.fmt || null,\n    marketCap: summary.marketCap?.fmt || null,\n    pegRatio: keyStats.pegRatio?.fmt || null,\n    // Price data\n    currentPrice: financial.currentPrice?.raw || summary.regularMarketPrice?.raw || null,\n    fiftyTwoWeekHigh: summary.fiftyTwoWeekHigh?.raw || null,\n    fiftyTwoWeekLow: summary.fiftyTwoWeekLow?.raw || null,\n    // Financial health\n    profitMargin: financial.profitMargins?.fmt || null,\n    returnOnEquity: financial.returnOnEquity?.fmt || null,\n    revenueGrowth: financial.revenueGrowth?.fmt || null,\n    debtToEquity: financial.debtToEquity?.fmt || null,\n    currentRatio: financial.currentRatio?.fmt || null,\n    // Analyst data\n    recommendationKey: financial.recommendationKey || null,\n    targetMeanPrice: financial.targetMeanPrice?.raw || null,\n    targetHighPrice: financial.targetHighPrice?.raw || null,\n    targetLowPrice: financial.targetLowPrice?.raw || null,\n    numberOfAnalysts: financial.numberOfAnalystOpinions?.raw || null,\n    // Risk\n    beta: keyStats.beta?.fmt || null,\n    shortPercent: keyStats.shortPercentOfFloat?.fmt || null\n  }\n}];"
+      },
+      "id": "process-financials",
+      "name": "Process Financial Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// ==================== 10X INVESTOR ANALYSIS ====================\nfunction generateAnalysis(data) {\n  const signals = [];\n  let bullish = 0;\n  let bearish = 0;\n  \n  // --- VALUATION ANALYSIS ---\n  const pe = parseFloat(data.trailingPE);\n  const forwardPE = parseFloat(data.forwardPE);\n  if (pe && forwardPE) {\n    if (forwardPE < pe) {\n      signals.push('📈 Earnings expected to grow (Forward P/E < Trailing P/E)');\n      bullish++;\n    } else if (forwardPE > pe * 1.2) {\n      signals.push('📉 Earnings expected to decline');\n      bearish++;\n    }\n  }\n  if (pe) {\n    if (pe < 15) {\n      signals.push('✅ Attractively valued (P/E < 15)');\n      bullish++;\n    } else if (pe > 50) {\n      signals.push('⚠️ Expensive valuation (P/E > 50)');\n      bearish++;\n    }\n  }\n  \n  // --- PROFITABILITY ---\n  const profitMargin = parseFloat(data.profitMargin);\n  if (profitMargin) {\n    if (profitMargin > 20) {\n      signals.push('✅ High profit margin (>' + data.profitMargin + ')');\n      bullish++;\n    } else if (profitMargin < 5) {\n      signals.push('⚠️ Low profit margin');\n      bearish++;\n    }\n  }\n  \n  const roe = parseFloat(data.returnOnEquity);\n  if (roe) {\n    if (roe > 20) {\n      signals.push('✅ Excellent ROE (' + data.returnOnEquity + ')');\n      bullish++;\n    } else if (roe < 10) {\n      signals.push('⚠️ Below-average ROE');\n      bearish++;\n    }\n  }\n  \n  // --- GROWTH ---\n  const revGrowth = parseFloat(data.revenueGrowth);\n  if (revGrowth) {\n    if (revGrowth > 20) {\n      signals.push('🚀 Strong revenue growth (' + data.revenueGrowth + ')');\n      bullish++;\n    } else if (revGrowth < 0) {\n      signals.push('📉 Revenue declining');\n      bearish++;\n    }\n  }\n  \n  // --- ANALYST SENTIMENT ---\n  const rec = data.recommendationKey;\n  if (rec) {\n    if (rec === 'strong_buy' || rec === 'buy') {\n      signals.push('👍 Analysts: ' + rec.toUpperCase().replace('_', ' '));\n      bullish++;\n    } else if (rec === 'sell' || rec === 'strong_sell') {\n      signals.push('👎 Analysts: ' + rec.toUpperCase().replace('_', ' '));\n      bearish++;\n    } else {\n      signals.push('➡️ Analysts: HOLD');\n    }\n  }\n  \n  // --- PRICE TARGET ---\n  const currentPrice = data.currentPrice;\n  const targetPrice = data.targetMeanPrice;\n  if (currentPrice && targetPrice) {\n    const upside = ((targetPrice - currentPrice) / currentPrice * 100).toFixed(1);\n    if (upside > 20) {\n      signals.push('🎯 Target: ' + upside + '% upside potential');\n      bullish++;\n    } else if (upside < -10) {\n      signals.push('🎯 Target: ' + upside + '% (below current)');\n      bearish++;\n    } else {\n      signals.push('🎯 Target: ' + upside + '% upside');\n    }\n  }\n  \n  // --- 52-WEEK POSITION ---\n  if (data.currentPrice && data.fiftyTwoWeekHigh && data.fiftyTwoWeekLow) {\n    const range = data.fiftyTwoWeekHigh - data.fiftyTwoWeekLow;\n    const position = ((data.currentPrice - data.fiftyTwoWeekLow) / range * 100).toFixed(0);\n    if (position < 25) {\n      signals.push('📉 Near 52-week low (' + position + '%)');\n    } else if (position > 75) {\n      signals.push('📈 Near 52-week high (' + position + '%)');\n    }\n  }\n  \n  // --- RISK ---\n  const beta = parseFloat(data.beta);\n  if (beta) {\n    if (beta > 1.5) {\n      signals.push('⚡ High volatility (Beta: ' + data.beta + ')');\n    } else if (beta < 0.8) {\n      signals.push('🛡️ Low volatility (Beta: ' + data.beta + ')');\n    }\n  }\n  \n  // --- OVERALL VERDICT ---\n  let verdict = '';\n  let verdictColor = 0x808080; // gray\n  const score = bullish - bearish;\n  \n  if (score >= 3) {\n    verdict = '🟢 BULLISH - Multiple positive signals';\n    verdictColor = 0x22c55e;\n  } else if (score >= 1) {\n    verdict = '🟡 CAUTIOUSLY OPTIMISTIC';\n    verdictColor = 0xeab308;\n  } else if (score <= -2) {\n    verdict = '🔴 BEARISH - Multiple warning signs';\n    verdictColor = 0xef4444;\n  } else {\n    verdict = '⚪ NEUTRAL - Mixed signals';\n    verdictColor = 0x6b7280;\n  }\n  \n  return { signals, verdict, verdictColor, bullish, bearish };\n}\n\n// ==================== BUILD DISCORD EMBED ====================\nconst analysis = data.yahooSymbol ? generateAnalysis(data) : null;\n\nconst color = data.tradeType === 'BUY' ? 0x22c55e : 0xef4444;\nconst emoji = data.tradeType === 'BUY' ? '🟢' : '🔴';\nconst actionWord = data.tradeType === 'BUY' ? 'BOUGHT' : 'SOLD';\n\nconst tradePrice = data.price ? data.price.toFixed(2) : 'N/A';\nconst currency = data.currency || 'DKK';\nconst instrumentName = data.instrument?.name || 'Unknown';\nconst legacyId = data.instrument?.legacyInstrumentId || '';\nconst instrumentSlug = instrumentName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\nconst logoUrl = data.instrument?.logoUrl || null;\n\nconst pnl = data.percentageChange;\nconst pnlFormatted = pnl !== undefined ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%` : 'N/A';\n\nconst tradeDate = new Date(data.postedAt);\nconst dateStr = tradeDate.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });\n\nconst nordnetUrl = `https://www.nordnet.dk/markedet/aktiekurser/${legacyId}-${instrumentSlug}`;\nconst yahooSymbol = data.yahooSymbol || null;\nconst yahooUrl = yahooSymbol ? `https://finance.yahoo.com/quote/${yahooSymbol}` : null;\n\nconst fields = [];\n\n// Trade info\nfields.push({ name: '💰 Trade Price', value: `${tradePrice} ${currency}`, inline: true });\nfields.push({ name: '📊 Position P&L', value: pnlFormatted, inline: true });\nfields.push({ name: '💼 Strategy', value: data.traderFocus, inline: true });\n\n// Key financials\nif (data.marketCap) {\n  fields.push({ name: '🏛️ Market Cap', value: data.marketCap, inline: true });\n}\nif (data.trailingPE) {\n  fields.push({ name: '📊 P/E Ratio', value: data.trailingPE, inline: true });\n}\nif (data.profitMargin) {\n  fields.push({ name: '💵 Profit Margin', value: data.profitMargin, inline: true });\n}\nif (data.returnOnEquity) {\n  fields.push({ name: '📈 ROE', value: data.returnOnEquity, inline: true });\n}\nif (data.revenueGrowth) {\n  fields.push({ name: '🚀 Revenue Growth', value: data.revenueGrowth, inline: true });\n}\nif (data.recommendationKey) {\n  fields.push({ name: '👥 Analyst Rating', value: data.recommendationKey.toUpperCase().replace('_', ' '), inline: true });\n}\n\n// 52-week range\nif (data.fiftyTwoWeekLow && data.fiftyTwoWeekHigh) {\n  const low = data.fiftyTwoWeekLow.toFixed(2);\n  const high = data.fiftyTwoWeekHigh.toFixed(2);\n  fields.push({ name: '📉 52W Range', value: `${low} - ${high}`, inline: true });\n}\n\n// Sector\nif (data.sector) {\n  fields.push({ name: '🏢 Sector', value: data.sector, inline: true });\n}\nif (yahooSymbol) {\n  fields.push({ name: '📈 Ticker', value: yahooSymbol, inline: true });\n}\n\n// Investment Analysis\nif (analysis && analysis.signals.length > 0) {\n  const analysisText = analysis.signals.slice(0, 6).join('\\n');\n  fields.push({ name: '🔍 Investment Analysis', value: analysisText, inline: false });\n  fields.push({ name: '📋 Verdict', value: analysis.verdict, inline: false });\n}\n\n// News\nconst news = data.news || [];\nif (news.length > 0) {\n  const newsText = news.map(n => {\n    const title = n.title?.substring(0, 45) + (n.title?.length > 45 ? '...' : '');\n    return `• [${title}](${n.link})`;\n  }).join('\\n');\n  fields.push({ name: '📰 News', value: newsText, inline: false });\n}\n\n// Description\nlet description = `**${data.traderName}** ${actionWord.toLowerCase()} this stock`;\nconst links = [`[Nordnet](${nordnetUrl})`];\nif (yahooUrl) links.push(`[Yahoo Finance](${yahooUrl})`);\ndescription += `\\n\\n🔗 ${links.join(' • ')}`;\n\n// Build embed\nconst embed = {\n  title: `${emoji} ${actionWord}: ${instrumentName}`,\n  description: description,\n  color: analysis?.verdictColor || color,\n  fields: fields,\n  footer: { text: `Trade: ${dateStr} | Analysis powered by Yahoo Finance` },\n  timestamp: data.postedAt\n};\n\nif (logoUrl) {\n  embed.thumbnail = { url: logoUrl };\n}\n\nreturn [{ json: { embed } }];"
       },
       "id": "format-message",
       "name": "Format Discord Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2300, 300]
+      "position": [2900, 300]
     },
     {
       "parameters": {
@@ -195,141 +269,54 @@
       "name": "Send to Discord",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2500, 300]
+      "position": [3100, 300]
     }
   ],
   "connections": {
     "Every 5 Minutes": {
-      "main": [
-        [
-          {
-            "node": "Trader List",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Trader List", "type": "main", "index": 0 }]]
     },
     "Trader List": {
-      "main": [
-        [
-          {
-            "node": "Split Traders",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Split Traders", "type": "main", "index": 0 }]]
     },
     "Split Traders": {
-      "main": [
-        [
-          {
-            "node": "Get User ID",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Get User ID", "type": "main", "index": 0 }]]
     },
     "Get User ID": {
-      "main": [
-        [
-          {
-            "node": "Get Activity Feed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Get Activity Feed", "type": "main", "index": 0 }]]
     },
     "Get Activity Feed": {
-      "main": [
-        [
-          {
-            "node": "Filter Trades",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Filter Trades", "type": "main", "index": 0 }]]
     },
     "Filter Trades": {
-      "main": [
-        [
-          {
-            "node": "Check If New",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Check If New", "type": "main", "index": 0 }]]
     },
     "Check If New": {
-      "main": [
-        [
-          {
-            "node": "Yahoo Finance Search",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Yahoo Finance Search", "type": "main", "index": 0 }]]
     },
     "Yahoo Finance Search": {
-      "main": [
-        [
-          {
-            "node": "Process Yahoo Search",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Process Yahoo Search", "type": "main", "index": 0 }]]
     },
     "Process Yahoo Search": {
-      "main": [
-        [
-          {
-            "node": "Yahoo Finance Quote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Get Yahoo Cookie", "type": "main", "index": 0 }]]
     },
-    "Yahoo Finance Quote": {
-      "main": [
-        [
-          {
-            "node": "Process Yahoo Quote",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Get Yahoo Cookie": {
+      "main": [[{ "node": "Get Yahoo Crumb", "type": "main", "index": 0 }]]
     },
-    "Process Yahoo Quote": {
-      "main": [
-        [
-          {
-            "node": "Format Discord Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Get Yahoo Crumb": {
+      "main": [[{ "node": "Prepare Financial Request", "type": "main", "index": 0 }]]
+    },
+    "Prepare Financial Request": {
+      "main": [[{ "node": "Get Financial Data", "type": "main", "index": 0 }]]
+    },
+    "Get Financial Data": {
+      "main": [[{ "node": "Process Financial Data", "type": "main", "index": 0 }]]
+    },
+    "Process Financial Data": {
+      "main": [[{ "node": "Format Discord Message", "type": "main", "index": 0 }]]
     },
     "Format Discord Message": {
-      "main": [
-        [
-          {
-            "node": "Send to Discord",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
@@ -340,6 +327,6 @@
     "instanceId": "shareville-tracker"
   },
   "pinData": {},
-  "versionId": "2",
+  "versionId": "3",
   "triggerCount": 0
 }
