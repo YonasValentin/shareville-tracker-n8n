@@ -1,0 +1,300 @@
+{
+  "name": "Portfolio News Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.prod.nntech.io/shareville/v3/profiles/slug/yonas-v",
+        "options": {}
+      },
+      "id": "get-profile",
+      "name": "Get My Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.prod.nntech.io/shareville/v3/profiles/{{ $json.id }}/activity-feed",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "language",
+              "value": "da"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-activity-feed",
+      "name": "Get Activity Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract unique stocks from trades\nconst feed = $input.first().json.feed || [];\nconst trades = feed.filter(e => e.type === 'TRADE');\n\n// Deduplicate by instrument ID\nconst uniqueStocks = [...new Map(\n  trades.map(t => [t.instrument.id, {\n    id: t.instrument.id,\n    name: t.instrument.name,\n    legacyId: t.instrument.legacyInstrumentId,\n    currency: t.currency,\n    logoUrl: t.instrument.logoUrl\n  }])\n).values()];\n\nif (uniqueStocks.length === 0) {\n  return [];\n}\n\nreturn uniqueStocks.map(s => ({ json: s }));"
+      },
+      "id": "extract-stocks",
+      "name": "Extract Unique Stocks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.currency }}",
+                    "rightValue": "SEK",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SEK"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.currency }}",
+                    "rightValue": "SEK",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Other"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-by-currency",
+      "name": "Route by Currency",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://mfn.se/a/{{ $json.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "mfn-fetch",
+      "name": "Fetch MFN.se",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stock = $('Route by Currency').item.json;\nconst html = $input.first().json.data || '';\n\n// Parse MFN.se press releases using matchAll\nconst articles = [];\nconst regex = /(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})[\\s\\S]*?<a[^>]*href=\"(\\/a\\/[^\"]+)\"[^>]*>([^<]+)<\\/a>/gi;\n\nfor (const match of html.matchAll(regex)) {\n  if (articles.length >= 5) break;\n  \n  const date = match[1];\n  const path = match[2];\n  const title = match[3].trim();\n  \n  // Skip navigation links and empty titles\n  if (!title || title.length < 10) continue;\n  \n  articles.push({\n    link: `https://mfn.se${path}`,\n    title: title,\n    date: date,\n    publisher: 'MFN.se',\n    uuid: `mfn-${path.replace(/[^a-z0-9]/gi, '-')}`\n  });\n}\n\n// If no articles found, return empty (will skip this stock)\nif (articles.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: null,\n    yahooExchange: null,\n    news: articles\n  }\n}];"
+      },
+      "id": "parse-mfn",
+      "name": "Parse MFN News",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://query1.finance.yahoo.com/v1/finance/search?q={{ encodeURIComponent($json.name) }}&quotesCount=1&newsCount=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "yahoo-search",
+      "name": "Yahoo Finance Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stock = $('Route by Currency').item.json;\nconst yahooData = $input.first().json;\n\nconst news = yahooData.news || [];\nconst quotes = yahooData.quotes || [];\nconst bestMatch = quotes[0];\n\n// No news? Skip this stock\nif (news.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: bestMatch?.symbol || null,\n    yahooExchange: bestMatch?.exchDisp || null,\n    news: news.slice(0, 5)\n  }\n}];"
+      },
+      "id": "process-yahoo",
+      "name": "Process Yahoo News",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": []
+        },
+        "options": {}
+      },
+      "id": "merge-news",
+      "name": "Merge News Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst seenNews = staticData.seenNews || {};\n\nconst data = $input.first().json;\nconst stock = data.stock;\nconst news = data.news || [];\n\n// Filter to only unseen news\nconst newNews = news.filter(article => {\n  const articleId = article.uuid || article.link;\n  if (seenNews[articleId]) {\n    return false;\n  }\n  // Mark as seen\n  seenNews[articleId] = Date.now();\n  return true;\n});\n\n// Clean up old entries (older than 7 days)\nconst oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);\nfor (const key of Object.keys(seenNews)) {\n  if (seenNews[key] < oneWeekAgo) {\n    delete seenNews[key];\n  }\n}\n\nstaticData.seenNews = seenNews;\n\n// No new news? Skip\nif (newNews.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: data.yahooSymbol,\n    yahooExchange: data.yahooExchange,\n    newNews: newNews\n  }\n}];"
+      },
+      "id": "check-if-new",
+      "name": "Filter New News",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst stock = data.stock;\nconst news = data.newNews || [];\nconst yahooSymbol = data.yahooSymbol;\n\nconst stockName = stock.name;\nconst logoUrl = stock.logoUrl;\nconst currency = stock.currency;\n\n// Build news list with source indicator\nconst newsText = news.map(n => {\n  const title = n.title || 'Untitled';\n  const link = n.link || '#';\n  const publisher = n.publisher || '';\n  return `• [${title}](${link})${publisher ? ` - *${publisher}*` : ''}`;\n}).join('\\n');\n\n// Links\nconst legacyId = stock.legacyId || '';\nconst instrumentSlug = stockName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\nconst nordnetUrl = `https://www.nordnet.dk/markedet/aktiekurser/${legacyId}-${instrumentSlug}`;\nconst yahooUrl = yahooSymbol ? `https://finance.yahoo.com/quote/${yahooSymbol}` : null;\nconst mfnUrl = currency === 'SEK' ? `https://mfn.se/a/${instrumentSlug}` : null;\n\nlet links = `[Nordnet](${nordnetUrl})`;\nif (yahooUrl) links += ` • [Yahoo Finance](${yahooUrl})`;\nif (mfnUrl) links += ` • [MFN.se](${mfnUrl})`;\n\nconst now = new Date();\nconst dateStr = now.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });\n\n// Source indicator in title\nconst sourceEmoji = currency === 'SEK' ? '🇸🇪' : '📰';\n\nconst embed = {\n  title: `${sourceEmoji} News Alert: ${stockName}`,\n  description: `**You own this stock**\\n\\n${newsText}\\n\\n🔗 ${links}`,\n  color: currency === 'SEK' ? 0xfecc00 : 0x3b82f6,\n  footer: { text: `Updated: ${dateStr}` },\n  timestamp: now.toISOString()\n};\n\nif (logoUrl) {\n  embed.thumbnail = { url: logoUrl };\n}\n\nconst fields = [];\nif (yahooSymbol) {\n  fields.push({ name: '📈 Ticker', value: yahooSymbol, inline: true });\n}\nfields.push({ name: '💱 Currency', value: currency, inline: true });\n\nif (fields.length > 0) {\n  embed.fields = fields;\n}\n\nreturn [{ json: { embed } }];"
+      },
+      "id": "format-discord",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/1462271025029972116/_pntfPiYeHxMXhiNGPIow50Q2XvT5CpA2d2o8OSCm64Cu4nLt4SYKU43-Z5F3woQFfkA",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: [$json.embed] }) }}",
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2100, 300]
+    }
+  ],
+  "connections": {
+    "Every 30 Minutes": {
+      "main": [[{ "node": "Get My Profile", "type": "main", "index": 0 }]]
+    },
+    "Get My Profile": {
+      "main": [[{ "node": "Get Activity Feed", "type": "main", "index": 0 }]]
+    },
+    "Get Activity Feed": {
+      "main": [[{ "node": "Extract Unique Stocks", "type": "main", "index": 0 }]]
+    },
+    "Extract Unique Stocks": {
+      "main": [[{ "node": "Route by Currency", "type": "main", "index": 0 }]]
+    },
+    "Route by Currency": {
+      "SEK": [[{ "node": "Fetch MFN.se", "type": "main", "index": 0 }]],
+      "Other": [[{ "node": "Yahoo Finance Search", "type": "main", "index": 0 }]]
+    },
+    "Fetch MFN.se": {
+      "main": [[{ "node": "Parse MFN News", "type": "main", "index": 0 }]]
+    },
+    "Parse MFN News": {
+      "main": [[{ "node": "Merge News Sources", "type": "main", "index": 0 }]]
+    },
+    "Yahoo Finance Search": {
+      "main": [[{ "node": "Process Yahoo News", "type": "main", "index": 0 }]]
+    },
+    "Process Yahoo News": {
+      "main": [[{ "node": "Merge News Sources", "type": "main", "index": 1 }]]
+    },
+    "Merge News Sources": {
+      "main": [[{ "node": "Filter New News", "type": "main", "index": 0 }]]
+    },
+    "Filter New News": {
+      "main": [[{ "node": "Format Discord Message", "type": "main", "index": 0 }]]
+    },
+    "Format Discord Message": {
+      "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "portfolio-news-alert"
+  },
+  "pinData": {},
+  "versionId": "2",
+  "triggerCount": 0
+}
