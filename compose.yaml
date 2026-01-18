@@ -1,0 +1,28 @@
+# Shareville Discord Tracker - n8n Stack
+# Deploy via Dockge at http://192.168.0.25:5001
+# Stack name: n8n
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=192.168.0.25
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - GENERIC_TIMEZONE=Europe/Copenhagen
+      - TZ=Europe/Copenhagen
+      # Increase memory for workflow execution
+      - NODE_OPTIONS=--max-old-space-size=256
+    volumes:
+      - n8n_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  n8n_data:

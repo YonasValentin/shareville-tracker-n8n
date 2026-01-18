@@ -1,0 +1,233 @@
+{
+  "name": "Shareville Discord Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "=[\n  { \"slug\": \"bagnis\", \"name\": \"Bagnis\", \"focus\": \"Scalping/swing\" },\n  { \"slug\": \"mingus\", \"name\": \"Mingus\", \"focus\": \"Nordic defense\" },\n  { \"slug\": \"wajme\", \"name\": \"Wajme\", \"focus\": \"Concentrated tech\" },\n  { \"slug\": \"wake76\", \"name\": \"Wake76\", \"focus\": \"Momentum\" },\n  { \"slug\": \"mahisse\", \"name\": \"Mahisse\", \"focus\": \"Long-term value\" }\n]",
+        "options": {}
+      },
+      "id": "trader-list",
+      "name": "Trader List",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "=",
+        "options": {}
+      },
+      "id": "split-traders",
+      "name": "Split Traders",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.prod.nntech.io/shareville/v3/profiles/slug/{{ $json.slug }}",
+        "options": {}
+      },
+      "id": "get-user-id",
+      "name": "Get User ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.prod.nntech.io/shareville/v3/profiles/{{ $json.id }}/activity-feed",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "language",
+              "value": "da"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-activity-feed",
+      "name": "Get Activity Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get trader info from earlier in the chain\nconst traderInfo = $('Split Traders').first().json;\nconst slug = traderInfo.slug;\nconst traderName = traderInfo.name;\nconst traderFocus = traderInfo.focus;\n\n// Get feed data\nconst feed = $input.first().json.feed || [];\n\n// Filter for TRADE events only\nconst trades = feed.filter(event => event.type === 'TRADE');\n\n// Map trades with trader info\nreturn trades.map(trade => ({\n  json: {\n    ...trade,\n    traderSlug: slug,\n    traderName: traderName,\n    traderFocus: traderFocus\n  }\n}));"
+      },
+      "id": "filter-trades",
+      "name": "Filter Trades",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get workflow static data for state persistence\nconst staticData = $getWorkflowStaticData('global');\nconst lastSeen = staticData.lastSeen || {};\n\nconst trade = $input.first().json;\nconst slug = trade.traderSlug;\nconst tradeTime = new Date(trade.postedAt).getTime();\nconst tradeId = `${slug}-${trade.id || tradeTime}`;\n\n// Check if we've already seen this trade\nif (lastSeen[tradeId]) {\n  return []; // Already alerted, skip\n}\n\n// Mark as seen\nlastSeen[tradeId] = Date.now();\nstaticData.lastSeen = lastSeen;\n\n// Clean up old entries (older than 7 days)\nconst oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);\nfor (const key of Object.keys(lastSeen)) {\n  if (lastSeen[key] < oneWeekAgo) {\n    delete lastSeen[key];\n  }\n}\n\nreturn [{ json: trade }];"
+      },
+      "id": "check-state",
+      "name": "Check If New",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const trade = $input.first().json;\n\n// Determine emoji based on trade type\nconst emoji = trade.tradeType === 'BUY' ? '🟢' : '🔴';\n\n// Format price\nconst price = trade.price ? `${trade.price} ${trade.currency || 'DKK'}` : 'N/A';\n\n// Get instrument info\nconst instrumentName = trade.instrument?.name || 'Unknown';\nconst instrumentId = trade.instrument?.id || '';\n\n// Build message\nconst content = `${emoji} **${trade.tradeType}**: ${instrumentName}\n👤 **Trader:** ${trade.traderName}\n💼 *${trade.traderFocus}*\n💰 **Price:** ${price}\n🔗 [View on Shareville](https://shareville.nordnet.dk/instrument/${instrumentId})`;\n\nreturn [{\n  json: {\n    content: content\n  }\n}];"
+      },
+      "id": "format-message",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $credentials.webhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.content }) }}",
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 300],
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "discord-webhook-cred",
+          "name": "Discord Webhook"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Trader List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trader List": {
+      "main": [
+        [
+          {
+            "node": "Split Traders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Traders": {
+      "main": [
+        [
+          {
+            "node": "Get User ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User ID": {
+      "main": [
+        [
+          {
+            "node": "Get Activity Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Activity Feed": {
+      "main": [
+        [
+          {
+            "node": "Filter Trades",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Trades": {
+      "main": [
+        [
+          {
+            "node": "Check If New",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If New": {
+      "main": [
+        [
+          {
+            "node": "Format Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "shareville-tracker"
+  },
+  "pinData": {},
+  "versionId": "1",
+  "triggerCount": 0
+}
