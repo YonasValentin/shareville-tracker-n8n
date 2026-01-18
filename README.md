@@ -1,22 +1,34 @@
 # Shareville Discord Tracker
 
-Automated Discord alerts when tracked Nordnet/Shareville traders make trades. Includes Yahoo Finance integration for market data.
+Automated Discord alerts for Nordnet/Shareville activity. Two workflows:
+
+1. **Trader Tracker** - Alerts when tracked traders make trades
+2. **Portfolio News** - Alerts when news is published about stocks you own
 
 ## Features
 
+### Trader Tracker (`shareville-workflow.json`)
 - Tracks 5 Shareville traders for new trades
 - Rich Discord embeds with stock info
 - Yahoo Finance integration (current price, 52-week range, sector)
-- Related news when available
+- Investment analysis with bullish/bearish signals
 - State management to prevent duplicate alerts
+
+### Portfolio News Alert (`portfolio-news-workflow.json`)
+- Reads your portfolio from your Shareville profile
+- **Hybrid news sources**: MFN.se for Swedish stocks, Yahoo Finance for others
+- Sends Discord alerts when new articles are published
+- Runs every 30 minutes
+- State management to prevent duplicate news alerts
 
 ## Files
 
 ```
 shareville-tracker-n8n/
-├── compose.yaml              # Docker Compose for n8n (official config)
-├── shareville-workflow.json  # n8n workflow to import
-└── README.md                 # This file
+├── compose.yaml                  # Docker Compose for n8n
+├── shareville-workflow.json      # Trader Tracker workflow
+├── portfolio-news-workflow.json  # Portfolio News Alert workflow
+└── README.md                     # This file
 ```
 
 ## Deployment via Dockge
@@ -67,12 +79,14 @@ volumes:
 2. Create your admin account
 3. Complete the onboarding wizard
 
-### Step 3: Import Workflow
+### Step 3: Import Workflows
 
 1. In n8n, click **Workflows** in sidebar
 2. Click **⋮** menu → **Import from File**
-3. Select `shareville-workflow.json`
-4. Open the imported workflow
+3. Import both workflow files:
+   - `shareville-workflow.json` (Trader Tracker)
+   - `portfolio-news-workflow.json` (Portfolio News)
+4. Open each imported workflow
 
 ### Step 4: Test & Activate
 
@@ -128,6 +142,74 @@ Edit the **Trader List** node in the workflow:
 ]
 ```
 
+## Portfolio News Alert
+
+Monitors news for stocks in your Shareville portfolio (`yonas-v`).
+
+### How it Works
+
+1. Fetches your Shareville profile
+2. Extracts unique stocks from your trades
+3. Routes by currency:
+   - **SEK stocks** → Scrapes MFN.se for Swedish press releases
+   - **Other stocks** → Searches Yahoo Finance for news
+4. Merges news from both sources
+5. Filters out already-seen news
+6. Sends Discord alerts for new articles
+
+### News Sources
+
+| Currency | Source | Coverage |
+|----------|--------|----------|
+| SEK | MFN.se | Swedish press releases (Clavister, Nanexa, etc.) |
+| USD/EUR/other | Yahoo Finance | US and international news |
+
+**Why MFN.se?** Yahoo Finance returns garbage for Nordic small-cap stocks. MFN.se (Modular Finance News) provides excellent coverage of Swedish press releases.
+
+### Alert Format
+
+**US/International stocks (Yahoo Finance):**
+```
+┌─────────────────────────────────────────┐
+│ 📰 News Alert: NVIDIA              [logo]│
+├─────────────────────────────────────────┤
+│ You own this stock                      │
+│                                         │
+│ • NVIDIA Q4 earnings beat estimates...  │
+│ • Jensen Huang announces new AI chip... │
+│                                         │
+│ 🔗 Nordnet • Yahoo Finance              │
+│ 📈 Ticker: NVDA  💱 USD                 │
+├─────────────────────────────────────────┤
+│ Updated: 18. jan 2026, 12:30            │
+└─────────────────────────────────────────┘
+```
+
+**Swedish stocks (MFN.se):**
+```
+┌─────────────────────────────────────────┐
+│ 🇸🇪 News Alert: Clavister          [logo]│
+├─────────────────────────────────────────┤
+│ You own this stock                      │
+│                                         │
+│ • Clavister awarded 280 MSEK...         │
+│ • Clavister Q4 report 2025...           │
+│                                         │
+│ 🔗 Nordnet • MFN.se                     │
+│ 💱 SEK                                  │
+├─────────────────────────────────────────┤
+│ Updated: 18. jan 2026, 12:30            │
+└─────────────────────────────────────────┘
+```
+
+### Changing Profile
+
+To monitor a different Shareville profile, edit the **Get My Profile** node URL:
+
+```
+https://api.prod.nntech.io/shareville/v3/profiles/slug/YOUR-SLUG-HERE
+```
+
 ## Troubleshooting
 
 ### No messages appearing
@@ -151,6 +233,7 @@ In Dockge: Click **Restart** button on n8n stack
 
 ## Architecture
 
+### Trader Tracker
 ```
 ┌─────────────────┐
 │ Schedule Trigger│ (every 5 min)
@@ -166,13 +249,47 @@ In Dockge: Click **Restart** button on n8n stack
                      ▼
          ┌───────────────────┐
          │ State Management  │
-         │ (skip duplicates) │
          └─────────┬─────────┘
                    ▼
          ┌───────────────────┐
          │ Discord Webhook   │
-         │ (rich embed)      │
          └───────────────────┘
+```
+
+### Portfolio News Alert
+```
+┌─────────────────┐
+│ Schedule Trigger│ (every 30 min)
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ Shareville API  │
+│ - Get profile   │
+│ - Get trades    │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ Route by        │
+│ Currency        │
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+┌───────┐ ┌──────────┐
+│MFN.se │ │Yahoo     │
+│(SEK)  │ │(other)   │
+└───┬───┘ └────┬─────┘
+    │          │
+    └────┬─────┘
+         ▼
+┌─────────────────┐
+│ Merge & Filter  │
+│ (skip seen)     │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ Discord Webhook │
+└─────────────────┘
 ```
 
 ## Resource Usage
