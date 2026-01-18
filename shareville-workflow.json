@@ -20,26 +20,13 @@
     },
     {
       "parameters": {
-        "mode": "raw",
-        "jsonOutput": "=[\n  { \"slug\": \"bagnis\", \"name\": \"Bagnis\", \"focus\": \"Scalping/swing\" },\n  { \"slug\": \"mingus\", \"name\": \"Mingus\", \"focus\": \"Nordic defense\" },\n  { \"slug\": \"wajme\", \"name\": \"Wajme\", \"focus\": \"Concentrated tech\" },\n  { \"slug\": \"wake76\", \"name\": \"Wake76\", \"focus\": \"Momentum\" },\n  { \"slug\": \"mahisse\", \"name\": \"Mahisse\", \"focus\": \"Long-term value\" }\n]",
-        "options": {}
+        "jsCode": "const traders = [\n  { slug: 'bagnis', name: 'Bagnis', focus: 'Scalping/swing' },\n  { slug: 'mingus', name: 'Mingus', focus: 'Nordic defense' },\n  { slug: 'wajme', name: 'Wajme', focus: 'Concentrated tech' },\n  { slug: 'wake76', name: 'Wake76', focus: 'Momentum' },\n  { slug: 'mahisse', name: 'Mahisse', focus: 'Long-term value' }\n];\n\nreturn traders.map(t => ({ json: t }));"
       },
       "id": "trader-list",
       "name": "Trader List",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [300, 300]
-    },
-    {
-      "parameters": {
-        "fieldToSplitOut": "=",
-        "options": {}
-      },
-      "id": "split-traders",
-      "name": "Split Traders",
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
-      "position": [500, 300]
     },
     {
       "parameters": {
@@ -80,7 +67,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const traderInfo = $('Split Traders').first().json;\nconst slug = traderInfo.slug;\nconst traderName = traderInfo.name;\nconst traderFocus = traderInfo.focus;\n\nconst feed = $input.first().json.feed || [];\nconst trades = feed.filter(event => event.type === 'TRADE');\n\nreturn trades.map(trade => ({\n  json: {\n    ...trade,\n    traderSlug: slug,\n    traderName: traderName,\n    traderFocus: traderFocus\n  }\n}));"
+        "jsCode": "const traderInfo = $('Trader List').first().json;\nconst slug = traderInfo.slug;\nconst traderName = traderInfo.name;\nconst traderFocus = traderInfo.focus;\n\nconst feed = $input.first().json.feed || [];\nconst trades = feed.filter(event => event.type === 'TRADE');\n\nreturn trades.map(trade => ({\n  json: {\n    ...trade,\n    traderSlug: slug,\n    traderName: traderName,\n    traderFocus: traderFocus\n  }\n}));"
       },
       "id": "filter-trades",
       "name": "Filter Trades",
@@ -277,9 +264,6 @@
       "main": [[{ "node": "Trader List", "type": "main", "index": 0 }]]
     },
     "Trader List": {
-      "main": [[{ "node": "Split Traders", "type": "main", "index": 0 }]]
-    },
-    "Split Traders": {
       "main": [[{ "node": "Get User ID", "type": "main", "index": 0 }]]
     },
     "Get User ID": {
