@@ -1,5 +1,5 @@
 {
-  "name": "Portfolio News Alert",
+  "name": "Portfolio News Alert v2",
   "nodes": [
     {
       "parameters": {
@@ -67,60 +67,31 @@
     },
     {
       "parameters": {
-        "rules": {
-          "rules": [
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict"
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.currency }}",
-                    "rightValue": "SEK",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "SEK"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict"
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.currency }}",
-                    "rightValue": "SEK",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notEquals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "Other"
+              "id": "condition-sek",
+              "leftValue": "={{ $json.currency }}",
+              "rightValue": "SEK",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         },
         "options": {}
       },
-      "id": "route-by-currency",
-      "name": "Route by Currency",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
+      "id": "if-sek",
+      "name": "Is SEK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
       "position": [900, 300]
     },
     {
@@ -153,7 +124,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const stock = $('Route by Currency').item.json;\nconst html = $input.first().json.data || '';\n\n// Parse MFN.se press releases using matchAll\nconst articles = [];\nconst regex = /(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})[\\s\\S]*?<a[^>]*href=\"(\\/a\\/[^\"]+)\"[^>]*>([^<]+)<\\/a>/gi;\n\nfor (const match of html.matchAll(regex)) {\n  if (articles.length >= 5) break;\n  \n  const date = match[1];\n  const path = match[2];\n  const title = match[3].trim();\n  \n  // Skip navigation links and empty titles\n  if (!title || title.length < 10) continue;\n  \n  articles.push({\n    link: `https://mfn.se${path}`,\n    title: title,\n    date: date,\n    publisher: 'MFN.se',\n    uuid: `mfn-${path.replace(/[^a-z0-9]/gi, '-')}`\n  });\n}\n\n// If no articles found, return empty (will skip this stock)\nif (articles.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: null,\n    yahooExchange: null,\n    news: articles\n  }\n}];"
+        "jsCode": "const stock = $('Is SEK?').item.json;\nconst html = $input.first().json.data || '';\n\n// Parse MFN.se press releases\nconst articles = [];\nconst matches = html.match(/(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})[\\s\\S]*?<a[^>]*href=\"(\\/a\\/[^\"]+)\"[^>]*>([^<]+)<\\/a>/gi) || [];\n\nfor (const match of matches) {\n  if (articles.length >= 5) break;\n  \n  const parts = match.match(/(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})[\\s\\S]*?<a[^>]*href=\"(\\/a\\/[^\"]+)\"[^>]*>([^<]+)<\\/a>/i);\n  if (!parts) continue;\n  \n  const date = parts[1];\n  const path = parts[2];\n  const title = parts[3].trim();\n  \n  if (!title || title.length < 10) continue;\n  \n  articles.push({\n    link: 'https://mfn.se' + path,\n    title: title,\n    date: date,\n    publisher: 'MFN.se',\n    uuid: 'mfn-' + path.replace(/[^a-z0-9]/gi, '-')\n  });\n}\n\nif (articles.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: null,\n    yahooExchange: null,\n    news: articles\n  }\n}];"
       },
       "id": "parse-mfn",
       "name": "Parse MFN News",
@@ -190,7 +161,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const stock = $('Route by Currency').item.json;\nconst yahooData = $input.first().json;\n\nconst news = yahooData.news || [];\nconst quotes = yahooData.quotes || [];\nconst bestMatch = quotes[0];\n\n// No news? Skip this stock\nif (news.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: bestMatch?.symbol || null,\n    yahooExchange: bestMatch?.exchDisp || null,\n    news: news.slice(0, 5)\n  }\n}];"
+        "jsCode": "const stock = $('Is SEK?').item.json;\nconst yahooData = $input.first().json;\n\nconst news = yahooData.news || [];\nconst quotes = yahooData.quotes || [];\nconst bestMatch = quotes[0];\n\nif (news.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: bestMatch?.symbol || null,\n    yahooExchange: bestMatch?.exchDisp || null,\n    news: news.slice(0, 5)\n  }\n}];"
       },
       "id": "process-yahoo",
       "name": "Process Yahoo News",
@@ -201,9 +172,7 @@
     {
       "parameters": {
         "mode": "combine",
-        "mergeByFields": {
-          "values": []
-        },
+        "combineBy": "combineAll",
         "options": {}
       },
       "id": "merge-news",
@@ -214,7 +183,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst seenNews = staticData.seenNews || {};\n\nconst data = $input.first().json;\nconst stock = data.stock;\nconst news = data.news || [];\n\n// Filter to only unseen news\nconst newNews = news.filter(article => {\n  const articleId = article.uuid || article.link;\n  if (seenNews[articleId]) {\n    return false;\n  }\n  // Mark as seen\n  seenNews[articleId] = Date.now();\n  return true;\n});\n\n// Clean up old entries (older than 7 days)\nconst oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);\nfor (const key of Object.keys(seenNews)) {\n  if (seenNews[key] < oneWeekAgo) {\n    delete seenNews[key];\n  }\n}\n\nstaticData.seenNews = seenNews;\n\n// No new news? Skip\nif (newNews.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: data.yahooSymbol,\n    yahooExchange: data.yahooExchange,\n    newNews: newNews\n  }\n}];"
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst seenNews = staticData.seenNews || {};\n\nconst data = $input.first().json;\nconst stock = data.stock;\nconst news = data.news || [];\n\nconst newNews = news.filter(article => {\n  const articleId = article.uuid || article.link;\n  if (seenNews[articleId]) {\n    return false;\n  }\n  seenNews[articleId] = Date.now();\n  return true;\n});\n\nconst oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);\nfor (const key of Object.keys(seenNews)) {\n  if (seenNews[key] < oneWeekAgo) {\n    delete seenNews[key];\n  }\n}\n\nstaticData.seenNews = seenNews;\n\nif (newNews.length === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: data.yahooSymbol,\n    yahooExchange: data.yahooExchange,\n    newNews: newNews\n  }\n}];"
       },
       "id": "check-if-new",
       "name": "Filter New News",
@@ -224,7 +193,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nconst stock = data.stock;\nconst news = data.newNews || [];\nconst yahooSymbol = data.yahooSymbol;\n\nconst stockName = stock.name;\nconst logoUrl = stock.logoUrl;\nconst currency = stock.currency;\n\n// Build news list with source indicator\nconst newsText = news.map(n => {\n  const title = n.title || 'Untitled';\n  const link = n.link || '#';\n  const publisher = n.publisher || '';\n  return `• [${title}](${link})${publisher ? ` - *${publisher}*` : ''}`;\n}).join('\\n');\n\n// Links\nconst legacyId = stock.legacyId || '';\nconst instrumentSlug = stockName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\nconst nordnetUrl = `https://www.nordnet.dk/markedet/aktiekurser/${legacyId}-${instrumentSlug}`;\nconst yahooUrl = yahooSymbol ? `https://finance.yahoo.com/quote/${yahooSymbol}` : null;\nconst mfnUrl = currency === 'SEK' ? `https://mfn.se/a/${instrumentSlug}` : null;\n\nlet links = `[Nordnet](${nordnetUrl})`;\nif (yahooUrl) links += ` • [Yahoo Finance](${yahooUrl})`;\nif (mfnUrl) links += ` • [MFN.se](${mfnUrl})`;\n\nconst now = new Date();\nconst dateStr = now.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });\n\n// Source indicator in title\nconst sourceEmoji = currency === 'SEK' ? '🇸🇪' : '📰';\n\nconst embed = {\n  title: `${sourceEmoji} News Alert: ${stockName}`,\n  description: `**You own this stock**\\n\\n${newsText}\\n\\n🔗 ${links}`,\n  color: currency === 'SEK' ? 0xfecc00 : 0x3b82f6,\n  footer: { text: `Updated: ${dateStr}` },\n  timestamp: now.toISOString()\n};\n\nif (logoUrl) {\n  embed.thumbnail = { url: logoUrl };\n}\n\nconst fields = [];\nif (yahooSymbol) {\n  fields.push({ name: '📈 Ticker', value: yahooSymbol, inline: true });\n}\nfields.push({ name: '💱 Currency', value: currency, inline: true });\n\nif (fields.length > 0) {\n  embed.fields = fields;\n}\n\nreturn [{ json: { embed } }];"
+        "jsCode": "const data = $input.first().json;\nconst stock = data.stock;\nconst news = data.newNews || [];\nconst yahooSymbol = data.yahooSymbol;\n\nconst stockName = stock.name;\nconst logoUrl = stock.logoUrl;\nconst currency = stock.currency;\n\nconst newsText = news.map(n => {\n  const title = n.title || 'Untitled';\n  const link = n.link || '#';\n  const publisher = n.publisher || '';\n  return '• [' + title + '](' + link + ')' + (publisher ? ' - *' + publisher + '*' : '');\n}).join('\\n');\n\nconst legacyId = stock.legacyId || '';\nconst instrumentSlug = stockName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\nconst nordnetUrl = 'https://www.nordnet.dk/markedet/aktiekurser/' + legacyId + '-' + instrumentSlug;\nconst yahooUrl = yahooSymbol ? 'https://finance.yahoo.com/quote/' + yahooSymbol : null;\nconst mfnUrl = currency === 'SEK' ? 'https://mfn.se/a/' + instrumentSlug : null;\n\nlet links = '[Nordnet](' + nordnetUrl + ')';\nif (yahooUrl) links += ' • [Yahoo Finance](' + yahooUrl + ')';\nif (mfnUrl) links += ' • [MFN.se](' + mfnUrl + ')';\n\nconst now = new Date();\nconst dateStr = now.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });\n\nconst sourceEmoji = currency === 'SEK' ? '🇸🇪' : '📰';\n\nconst embed = {\n  title: sourceEmoji + ' News Alert: ' + stockName,\n  description: '**You own this stock**\\n\\n' + newsText + '\\n\\n🔗 ' + links,\n  color: currency === 'SEK' ? 0xfecc00 : 0x3b82f6,\n  footer: { text: 'Updated: ' + dateStr },\n  timestamp: now.toISOString()\n};\n\nif (logoUrl) {\n  embed.thumbnail = { url: logoUrl };\n}\n\nconst fields = [];\nif (yahooSymbol) {\n  fields.push({ name: '📈 Ticker', value: yahooSymbol, inline: true });\n}\nfields.push({ name: '💱 Currency', value: currency, inline: true });\n\nif (fields.length > 0) {\n  embed.fields = fields;\n}\n\nreturn [{ json: { embed } }];"
       },
       "id": "format-discord",
       "name": "Format Discord Message",
@@ -259,9 +228,9 @@
       "main": [[{ "node": "Extract Unique Stocks", "type": "main", "index": 0 }]]
     },
     "Extract Unique Stocks": {
-      "main": [[{ "node": "Route by Currency", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Is SEK?", "type": "main", "index": 0 }]]
     },
-    "Route by Currency": {
+    "Is SEK?": {
       "main": [
         [{ "node": "Fetch MFN.se", "type": "main", "index": 0 }],
         [{ "node": "Yahoo Finance Search", "type": "main", "index": 0 }]
@@ -293,10 +262,5 @@
     "executionOrder": "v1"
   },
   "staticData": null,
-  "meta": {
-    "instanceId": "portfolio-news-alert"
-  },
-  "pinData": {},
-  "versionId": "2",
-  "triggerCount": 0
+  "pinData": {}
 }
