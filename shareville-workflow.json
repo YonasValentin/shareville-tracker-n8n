@@ -111,7 +111,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $credentials.webhookUrl }}",
+        "url": "https://discord.com/api/webhooks/1462271025029972116/_pntfPiYeHxMXhiNGPIow50Q2XvT5CpA2d2o8OSCm64Cu4nLt4SYKU43-Z5F3woQFfkA",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ content: $json.content }) }}",
@@ -121,13 +121,7 @@
       "name": "Send to Discord",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1700, 300],
-      "credentials": {
-        "httpCustomAuth": {
-          "id": "discord-webhook-cred",
-          "name": "Discord Webhook"
-        }
-      }
+      "position": [1700, 300]
     }
   ],
   "connections": {
