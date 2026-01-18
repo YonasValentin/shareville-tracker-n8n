@@ -262,8 +262,10 @@
       "main": [[{ "node": "Route by Currency", "type": "main", "index": 0 }]]
     },
     "Route by Currency": {
-      "SEK": [[{ "node": "Fetch MFN.se", "type": "main", "index": 0 }]],
-      "Other": [[{ "node": "Yahoo Finance Search", "type": "main", "index": 0 }]]
+      "main": [
+        [{ "node": "Fetch MFN.se", "type": "main", "index": 0 }],
+        [{ "node": "Yahoo Finance Search", "type": "main", "index": 0 }]
+      ]
     },
     "Fetch MFN.se": {
       "main": [[{ "node": "Parse MFN News", "type": "main", "index": 0 }]]
