@@ -1,0 +1,285 @@
+{
+  "name": "Earnings Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Daily 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.prod.nntech.io/shareville/v3/profiles/slug/yonas-v",
+        "options": {}
+      },
+      "id": "get-profile",
+      "name": "Get My Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.prod.nntech.io/shareville/v3/profiles/{{ $json.id }}/activity-feed",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "language",
+              "value": "da"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-activity-feed",
+      "name": "Get Activity Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract unique stocks from trades\nconst feed = $input.first().json.feed || [];\nconst trades = feed.filter(e => e.type === 'TRADE');\n\n// Deduplicate by instrument ID\nconst uniqueStocks = [...new Map(\n  trades.map(t => [t.instrument.id, {\n    id: t.instrument.id,\n    name: t.instrument.name,\n    legacyId: t.instrument.legacyInstrumentId,\n    currency: t.currency,\n    logoUrl: t.instrument.logoUrl\n  }])\n).values()];\n\nif (uniqueStocks.length === 0) {\n  return [];\n}\n\nreturn uniqueStocks.map(s => ({ json: s }));"
+      },
+      "id": "extract-stocks",
+      "name": "Extract Unique Stocks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://query1.finance.yahoo.com/v1/finance/search?q={{ encodeURIComponent($json.name) }}&quotesCount=5&newsCount=0",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "yahoo-search",
+      "name": "Yahoo Finance Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stock = $('Extract Unique Stocks').item.json;\nconst yahooData = $input.first().json;\n\nconst quotes = yahooData.quotes || [];\nconst nordicExchanges = ['STO', 'CPH', 'OSL', 'HEL'];\nconst usExchanges = ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ'];\n\nlet bestMatch = quotes.find(q => nordicExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes.find(q => usExchanges.includes(q.exchange));\nif (!bestMatch) bestMatch = quotes[0];\n\nif (!bestMatch || !bestMatch.symbol) {\n  return [];\n}\n\nreturn [{\n  json: {\n    stock: stock,\n    yahooSymbol: bestMatch.symbol,\n    yahooExchange: bestMatch.exchDisp || bestMatch.exchange\n  }\n}];"
+      },
+      "id": "process-yahoo-search",
+      "name": "Process Yahoo Search",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://fc.yahoo.com",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "yahoo-cookie",
+      "name": "Get Yahoo Cookie",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://query2.finance.yahoo.com/v1/test/getcrumb",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $input.first().json.headers['set-cookie']?.[0]?.split(';')[0] || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "yahoo-crumb",
+      "name": "Get Yahoo Crumb",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevData = $('Process Yahoo Search').first().json;\nconst cookieResponse = $('Get Yahoo Cookie').first().json;\nconst crumb = $input.first().json.data || '';\nconst cookie = cookieResponse.headers?.['set-cookie']?.[0]?.split(';')[0] || '';\n\nreturn [{\n  json: {\n    ...prevData,\n    yahooCrumb: crumb,\n    yahooCookie: cookie\n  }\n}];"
+      },
+      "id": "prepare-request",
+      "name": "Prepare Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://query2.finance.yahoo.com/v10/finance/quoteSummary/{{ $json.yahooSymbol }}?modules=calendarEvents&crumb={{ $json.yahooCrumb }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $json.yahooCookie }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "yahoo-calendar",
+      "name": "Get Calendar Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst alertedEarnings = staticData.alertedEarnings || {};\n\nconst prevData = $('Prepare Request').first().json;\nconst calResponse = $input.first().json;\n\nconst result = calResponse?.quoteSummary?.result?.[0] || {};\nconst calendarEvents = result.calendarEvents || {};\nconst earnings = calendarEvents.earnings || {};\n\n// Get earnings date\nconst earningsDateArr = earnings.earningsDate || [];\nif (earningsDateArr.length === 0) {\n  return [];\n}\n\nconst earningsTimestamp = earningsDateArr[0]?.raw;\nif (!earningsTimestamp) {\n  return [];\n}\n\nconst earningsMs = earningsTimestamp * 1000;\nconst now = Date.now();\nconst daysUntil = Math.floor((earningsMs - now) / (24 * 60 * 60 * 1000));\n\n// Alert if 1-3 days away (covers weekend edge cases)\nif (daysUntil < 1 || daysUntil > 3) {\n  return [];\n}\n\n// Dedupe: only alert once per earnings date per stock\nconst alertKey = `${prevData.yahooSymbol}-${earningsTimestamp}`;\nif (alertedEarnings[alertKey]) {\n  return [];\n}\n\nalertedEarnings[alertKey] = Date.now();\nstaticData.alertedEarnings = alertedEarnings;\n\n// Cleanup old entries (30 days)\nconst thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);\nfor (const key of Object.keys(alertedEarnings)) {\n  if (alertedEarnings[key] < thirtyDaysAgo) {\n    delete alertedEarnings[key];\n  }\n}\n\n// Format date\nconst earningsDate = new Date(earningsMs);\nconst dateFormatted = earningsDate.toLocaleDateString('da-DK', {\n  weekday: 'long',\n  day: 'numeric',\n  month: 'long',\n  year: 'numeric'\n});\n\nreturn [{\n  json: {\n    stock: prevData.stock,\n    yahooSymbol: prevData.yahooSymbol,\n    yahooExchange: prevData.yahooExchange,\n    daysUntil: daysUntil,\n    earningsDateFormatted: dateFormatted,\n    earningsAverage: earnings.earningsAverage?.fmt || null,\n    earningsLow: earnings.earningsLow?.fmt || null,\n    earningsHigh: earnings.earningsHigh?.fmt || null,\n    revenueAverage: earnings.revenueAverage?.fmt || null\n  }\n}];"
+      },
+      "id": "filter-upcoming",
+      "name": "Filter Upcoming Earnings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst stock = data.stock;\n\nconst stockName = stock.name;\nconst logoUrl = stock.logoUrl;\nconst currency = stock.currency;\n\nconst legacyId = stock.legacyId || '';\nconst instrumentSlug = stockName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\nconst nordnetUrl = 'https://www.nordnet.dk/markedet/aktiekurser/' + legacyId + '-' + instrumentSlug;\nconst yahooUrl = 'https://finance.yahoo.com/quote/' + data.yahooSymbol;\n\nconst links = '[Nordnet](' + nordnetUrl + ') • [Yahoo Finance](' + yahooUrl + ')';\n\nconst daysText = data.daysUntil === 1 ? '1 dag' : data.daysUntil + ' dage';\n\nconst fields = [\n  { name: '📈 Ticker', value: data.yahooSymbol, inline: true },\n  { name: '💱 Currency', value: currency, inline: true },\n  { name: '📅 Dato', value: data.earningsDateFormatted, inline: false }\n];\n\nif (data.earningsAverage) {\n  fields.push({ name: '💰 Expected EPS', value: data.earningsAverage, inline: true });\n}\nif (data.earningsLow && data.earningsHigh) {\n  fields.push({ name: '📊 EPS Range', value: data.earningsLow + ' - ' + data.earningsHigh, inline: true });\n}\nif (data.revenueAverage) {\n  fields.push({ name: '💵 Expected Revenue', value: data.revenueAverage, inline: true });\n}\n\nconst embed = {\n  title: '📊 Regnskabsdag Alert: ' + stockName,\n  description: '**' + daysText + ' til regnskab!**\\n\\n🔗 ' + links,\n  color: 0xf59e0b,\n  fields: fields,\n  footer: { text: 'Earnings Alert | Yahoo Finance' },\n  timestamp: new Date().toISOString()\n};\n\nif (logoUrl) {\n  embed.thumbnail = { url: logoUrl };\n}\n\nreturn [{ json: { embed } }];"
+      },
+      "id": "format-discord",
+      "name": "Format Discord Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2300, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/1462929107125014788/Rc_k41CGhVGL5itVlPdC_mT9fZmb70DRcakuwBglOu0jsDlIkg7aIeYn2tZeTR_zGJ6W",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: [$json.embed] }) }}",
+        "options": {}
+      },
+      "id": "discord-webhook",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2500, 300]
+    }
+  ],
+  "connections": {
+    "Daily 9 AM": {
+      "main": [[{ "node": "Get My Profile", "type": "main", "index": 0 }]]
+    },
+    "Get My Profile": {
+      "main": [[{ "node": "Get Activity Feed", "type": "main", "index": 0 }]]
+    },
+    "Get Activity Feed": {
+      "main": [[{ "node": "Extract Unique Stocks", "type": "main", "index": 0 }]]
+    },
+    "Extract Unique Stocks": {
+      "main": [[{ "node": "Yahoo Finance Search", "type": "main", "index": 0 }]]
+    },
+    "Yahoo Finance Search": {
+      "main": [[{ "node": "Process Yahoo Search", "type": "main", "index": 0 }]]
+    },
+    "Process Yahoo Search": {
+      "main": [[{ "node": "Get Yahoo Cookie", "type": "main", "index": 0 }]]
+    },
+    "Get Yahoo Cookie": {
+      "main": [[{ "node": "Get Yahoo Crumb", "type": "main", "index": 0 }]]
+    },
+    "Get Yahoo Crumb": {
+      "main": [[{ "node": "Prepare Request", "type": "main", "index": 0 }]]
+    },
+    "Prepare Request": {
+      "main": [[{ "node": "Get Calendar Events", "type": "main", "index": 0 }]]
+    },
+    "Get Calendar Events": {
+      "main": [[{ "node": "Filter Upcoming Earnings", "type": "main", "index": 0 }]]
+    },
+    "Filter Upcoming Earnings": {
+      "main": [[{ "node": "Format Discord Message", "type": "main", "index": 0 }]]
+    },
+    "Format Discord Message": {
+      "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {}
+}
